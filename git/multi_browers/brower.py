@@ -45,67 +45,13 @@ def get_client_size(hwnd):
     except:
         return None, None
 
-# Danh sách browsers được hỗ trợ
-BROWSER_KEYWORDS = {
-    'Chrome': ['Chrome', 'Google Chrome'],
-    'Edge': ['Edge', 'Microsoft Edge', 'msedge'],
-    'Firefox': ['Firefox', 'Mozilla Firefox'],
-    'Opera': ['Opera', 'Opera Browser'],
-    'Brave': ['Brave', 'Brave Browser'],
-    'Vivaldi': ['Vivaldi'],
-    'Safari': ['Safari'],
-    'Yandex': ['Yandex'],
-    'CocCoc': ['CocCoc']
-}
-
-def is_browser_window(window):
-    """Kiểm tra xem cửa sổ có phải là browser không"""
-    try:
-        title_lower = window.title.lower()
-        
-        # Kiểm tra theo title
-        for browser_name, keywords in BROWSER_KEYWORDS.items():
-            for keyword in keywords:
-                if keyword.lower() in title_lower:
-                    return True
-        
-        # Kiểm tra process name nếu có thể
-        try:
-            import win32process
-            _, pid = win32process.GetWindowThreadProcessId(window._hWnd)
-            try:
-                import psutil
-                proc = psutil.Process(pid)
-                proc_name = proc.name().lower()
-                for browser_name, keywords in BROWSER_KEYWORDS.items():
-                    for keyword in keywords:
-                        if keyword.lower() in proc_name:
-                            return True
-            except:
-                pass
-        except:
-            pass
-        
-        return False
-    except:
-        return False
-
 def get_valid_chrome_windows():
-    """Lấy danh sách cửa sổ browser hợp lệ (hỗ trợ tất cả browsers)"""
-    all_wins = gw.getAllWindows()
+    """Lấy danh sách cửa sổ Chrome hợp lệ"""
+    all_wins = gw.getWindowsWithTitle('Chrome')
     valid = []
     for w in all_wins:
         try:
-            # Bỏ qua cửa sổ quá nhỏ hoặc đã minimize
-            if w.isMinimized or w.width < 100 or w.height < 100:
-                continue
-            
-            # Bỏ qua cửa sổ không có title hợp lệ
-            if not w.title or len(w.title.strip()) < 3:
-                continue
-            
-            # Kiểm tra xem có phải browser không
-            if is_browser_window(w):
+            if not w.isMinimized and w.width > 100 and w.height > 100:
                 valid.append(w)
         except:
             pass
@@ -160,43 +106,21 @@ def update_window_list():
 
 # Khởi tạo
 if not update_window_list():
-    print("[ERROR] Cần ít nhất 1 cửa sổ browser để chạy!")
+    print("[ERROR] Cần ít nhất 1 cửa sổ Chrome để chạy!")
     sys.exit(1)
 
-# Phân loại browsers
-browser_types = {}
-for w in [main_window] + other_windows:
-    try:
-        browser = "Unknown"
-        title_lower = w.title.lower()
-        for browser_name, keywords in BROWSER_KEYWORDS.items():
-            for keyword in keywords:
-                if keyword.lower() in title_lower:
-                    browser = browser_name
-                    break
-            if browser != "Unknown":
-                break
-        browser_types[browser] = browser_types.get(browser, 0) + 1
-    except:
-        pass
-
 print("=" * 70)
-print(f"[OK] Đã tìm thấy {len(other_windows) + 1} cửa sổ browser")
-if browser_types:
-    browser_summary = ", ".join([f"{count} {name}" for name, count in sorted(browser_types.items())])
-    print(f"[INFO] Browsers: {browser_summary}")
+print(f"[OK] Đã tìm thấy {len(other_windows) + 1} cửa sổ Chrome")
 print(f"[MAIN] Cửa sổ chính: '{main_window.title[:50]}...'")
 print(f"       HWND: {main_hwnd}")
 print(f"[INFO] {len(other_windows)} cửa sổ phụ sẽ được đồng bộ")
 print("=" * 70)
-print("🚀 HỆ THỐNG ĐỒNG BỘ TỶ LỆ PHẦN TRĂM - HỖ TRỢ TẤT CẢ BROWSERS")
+print("🚀 HỆ THỐNG ĐỒNG BỘ CHROME - TỶ LỆ PHẦN TRĂM")
 print("  ✓ Tự động scale theo kích thước cửa sổ")
 print("  ✓ Đồng bộ chính xác 100% dù khác size")
-print("  ✓ Click/Scroll/Drag/Drop đều được xử lý")
-print("  ✓ Đồng bộ BÀN PHÍM (text input, phím tắt)")
-print("  ✓ Đồng bộ DI CHUYỂN CHUỘT (drag & drop)")
+print("  ✓ Đồng bộ CHUỘT: Click, Scroll, Drag & Drop")
+print("  ✓ Đồng bộ BÀN PHÍM: Text input, phím tắt, special keys")
 print("  ✓ Phát hiện cửa sổ mới tự động")
-print("  ✓ Hỗ trợ: Chrome, Edge, Firefox, Opera, Brave, Vivaldi, Yandex, CocCoc...")
 print("  ✓ Nhấn ESC để thoát")
 print("=" * 70 + "\n")
 print("[READY] HỆ THỐNG ĐÃ SẴN SÀNG\n")
@@ -213,13 +137,13 @@ def monitor_windows():
                 current_count = len(other_windows) + 1
                 if current_count != last_window_count:
                     if current_count > last_window_count:
-                        print(f"[+] Phát hiện {current_count - last_window_count} cửa sổ browser mới. Tổng: {current_count}")
+                        print(f"[+] Phát hiện {current_count - last_window_count} cửa sổ Chrome mới. Tổng: {current_count}")
                     else:
-                        print(f"[-] {last_window_count - current_count} cửa sổ browser đã đóng. Còn: {current_count}")
+                        print(f"[-] {last_window_count - current_count} cửa sổ Chrome đã đóng. Còn: {current_count}")
                     last_window_count = current_count
             else:
                 if last_window_count > 0:
-                    print("[WARN] Tất cả cửa sổ browser đã đóng!")
+                    print("[WARN] Tất cả cửa sổ Chrome đã đóng!")
                     last_window_count = 0
         except:
             pass
@@ -435,7 +359,7 @@ KEY_VK_MAP = {
 }
 
 def sync_keyboard(key, is_press=True):
-    """Đồng bộ keyboard input đến tất cả cửa sổ phụ"""
+    """Đồng bộ keyboard input đến tất cả cửa sổ phụ - Cải thiện"""
     if not ENABLE_KEYBOARD_SYNC:
         return
     
@@ -461,7 +385,7 @@ def sync_keyboard(key, is_press=True):
                 elif hasattr(key, 'value') and hasattr(key.value, 'vk'):
                     vk_code = key.value.vk
                 elif hasattr(key, 'char') and key.char:
-                    # Regular character
+                    # Regular character - xử lý tốt hơn
                     char = key.char
                     char_to_send = char
                     # Chuyển char thành VK code
@@ -476,10 +400,20 @@ def sync_keyboard(key, is_press=True):
                 if vk_code is None:
                     return
                 
+                # Lấy modifier keys state
+                shift_state = win32api.GetAsyncKeyState(win32con.VK_SHIFT) & 0x8000
+                ctrl_state = win32api.GetAsyncKeyState(win32con.VK_CONTROL) & 0x8000
+                alt_state = win32api.GetAsyncKeyState(win32con.VK_MENU) & 0x8000
+                
                 # Gửi key đến các cửa sổ phụ
                 scan_code = win32api.MapVirtualKey(vk_code, 0)
                 repeat_count = 1
-                lparam = (repeat_count & 0xFFFF) | (scan_code << 16)
+                # Bit 30 = previous key state, bit 31 = transition state
+                lparam_base = (repeat_count & 0xFFFF) | (scan_code << 16)
+                if not is_press:
+                    lparam_base |= 0xC0000000  # Previous key was down, now released
+                else:
+                    lparam_base |= 0x00000000  # Key is being pressed
                 
                 if is_press:
                     msg = win32con.WM_KEYDOWN
@@ -494,12 +428,13 @@ def sync_keyboard(key, is_press=True):
                             continue
                         
                         # Gửi key message
-                        win32gui.PostMessage(hwnd, msg, vk_code, lparam)
+                        win32gui.PostMessage(hwnd, msg, vk_code, lparam_base)
                         
-                        # Nếu là ký tự có thể in, gửi thêm WM_CHAR
+                        # Nếu là ký tự có thể in và đang nhấn, gửi WM_CHAR để text input hoạt động tốt hơn
                         if is_press and char_to_send and char_to_send.isprintable():
                             char_code = ord(char_to_send)
-                            win32gui.PostMessage(hwnd, char_msg, char_code, lparam)
+                            # WM_CHAR cần lparam với repeat count và scan code
+                            win32gui.PostMessage(hwnd, char_msg, char_code, lparam_base)
                     except:
                         pass
                         

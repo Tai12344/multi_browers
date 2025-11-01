@@ -65,91 +65,8 @@ class ModernButton(tk.Button):
             self['background'] = self.default_bg
 
 # === HÀM CHÍNH ===
-# Danh sách browsers được hỗ trợ
-BROWSER_KEYWORDS = {
-    'Chrome': ['Chrome', 'Google Chrome'],
-    'Edge': ['Edge', 'Microsoft Edge', 'msedge'],
-    'Firefox': ['Firefox', 'Mozilla Firefox'],
-    'Opera': ['Opera', 'Opera Browser'],
-    'Brave': ['Brave', 'Brave Browser'],
-    'Vivaldi': ['Vivaldi'],
-    'Safari': ['Safari'],  # Nếu có trên Windows
-    'Yandex': ['Yandex'],
-    'CocCoc': ['CocCoc']
-}
-
-def get_all_browser_windows():
-    """Lấy danh sách tất cả cửa sổ browser"""
-    all_browsers = []
-    browser_types_found = set()
-    
-    # Duyệt tất cả cửa sổ
-    all_windows = gw.getAllWindows()
-    
-    for w in all_windows:
-        try:
-            title_lower = w.title.lower()
-            
-            # Bỏ qua các cửa sổ quá nhỏ hoặc đã minimize
-            if w.isMinimized or w.width < 100 or w.height < 100:
-                continue
-            
-            # Bỏ qua cửa sổ không có title hoặc title rỗng
-            if not w.title or len(w.title.strip()) < 3:
-                continue
-            
-            # Xác định loại browser
-            browser_type = None
-            for browser_name, keywords in BROWSER_KEYWORDS.items():
-                for keyword in keywords:
-                    if keyword.lower() in title_lower:
-                        browser_type = browser_name
-                        browser_types_found.add(browser_name)
-                        break
-                if browser_type:
-                    break
-            
-            # Nếu không phát hiện được, có thể là browser khác - thêm vào
-            if not browser_type:
-                # Kiểm tra một số pattern chung của browser
-                common_patterns = ['browser', 'window', 'tab']
-                if any(p in title_lower for p in common_patterns):
-                    # Thử kiểm tra process name nếu có thể
-                    try:
-                        import psutil
-                        import win32process
-                        _, pid = win32process.GetWindowThreadProcessId(w._hWnd)
-                        proc = psutil.Process(pid)
-                        proc_name = proc.name().lower()
-                        for browser_name, keywords in BROWSER_KEYWORDS.items():
-                            for keyword in keywords:
-                                if keyword.lower() in proc_name:
-                                    browser_type = browser_name
-                                    browser_types_found.add(browser_name)
-                                    break
-                            if browser_type:
-                                break
-                    except:
-                        pass
-                
-                # Nếu vẫn không có, có thể là browser không trong danh sách
-                if not browser_type:
-                    browser_type = "Unknown Browser"
-            
-            all_browsers.append({
-                'hwnd': w._hWnd,
-                'title': w.title,
-                'browser': browser_type,
-                'pos': (w.left, w.top),
-                'size': (w.width, w.height)
-            })
-        except:
-            pass
-    
-    return all_browsers, browser_types_found
-
 def get_chrome_windows():
-    """Lấy danh sách cửa sổ Chrome (giữ tương thích)"""
+    """Lấy danh sách cửa sổ Chrome"""
     all_windows = gw.getWindowsWithTitle('Chrome')
     windows = []
     for w in all_windows:
@@ -158,7 +75,6 @@ def get_chrome_windows():
                 windows.append({
                     'hwnd': w._hWnd,
                     'title': w.title,
-                    'browser': 'Chrome',
                     'pos': (w.left, w.top),
                     'size': (w.width, w.height)
                 })
@@ -168,10 +84,10 @@ def get_chrome_windows():
 
 def open_window_selector():
     """Mở cửa sổ chọn cửa sổ chính"""
-    windows, browser_types = get_all_browser_windows()
+    windows = get_chrome_windows()
     
     if not windows:
-        messagebox.showwarning("Cảnh báo", "Không tìm thấy cửa sổ browser nào!\nVui lòng mở browser trước.")
+        messagebox.showwarning("Cảnh báo", "Không tìm thấy cửa sổ Chrome nào!\nVui lòng mở Chrome trước.")
         return
     
     # Popup
@@ -189,16 +105,15 @@ def open_window_selector():
     
     tk.Label(
         header,
-        text="🎯 Chọn cửa sổ Browser làm cửa sổ chính",
+        text="🎯 Chọn cửa sổ Chrome làm cửa sổ chính",
         font=("Segoe UI", 16, "bold"),
         bg=COLORS['primary'],
         fg="white"
     ).pack(pady=15)
     
-    browser_info = f"Đã tìm thấy: {', '.join(sorted(browser_types))}" if browser_types else "Đã tìm thấy browsers"
     tk.Label(
         header,
-        text=f"Cửa sổ được chọn sẽ điều khiển tất cả các cửa sổ khác\n{browser_info}",
+        text="Cửa sổ được chọn sẽ điều khiển tất cả các cửa sổ Chrome khác",
         font=("Segoe UI", 10),
         bg=COLORS['primary'],
         fg="white"
@@ -208,15 +123,9 @@ def open_window_selector():
     content = tk.Frame(selector, bg=COLORS['light'])
     content.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
     
-    browser_summary = {}
-    for win in windows:
-        browser = win.get('browser', 'Unknown')
-        browser_summary[browser] = browser_summary.get(browser, 0) + 1
-    
-    summary_text = " + ".join([f"{count} {browser}" for browser, count in sorted(browser_summary.items())])
     tk.Label(
         content,
-        text=f"📊 Tìm thấy {len(windows)} cửa sổ browser ({summary_text})",
+        text=f"📊 Tìm thấy {len(windows)} cửa sổ Chrome",
         font=("Segoe UI", 11, "bold"),
         bg=COLORS['light'],
         fg=COLORS['text']
@@ -246,9 +155,8 @@ def open_window_selector():
     scrollbar.config(command=listbox.yview)
     
     for i, win in enumerate(windows):
-        browser = win.get('browser', 'Unknown')
-        title = win['title'][:50] + "..." if len(win['title']) > 50 else win['title']
-        listbox.insert(tk.END, f"  [{i+1}]  [{browser}]  HWND: {win['hwnd']}  •  {title}")
+        title = win['title'][:60] + "..." if len(win['title']) > 60 else win['title']
+        listbox.insert(tk.END, f"  [{i+1}]  HWND: {win['hwnd']}  •  {title}")
     
     listbox.select_set(0)
     listbox.activate(0)
@@ -263,15 +171,14 @@ def open_window_selector():
         global selected_hwnd
         selected_win = windows[selected_idx[0]]
         selected_hwnd = selected_win['hwnd']
-        title = selected_win['title'][:40]
-        browser = selected_win.get('browser', 'Unknown')
+        title = selected_win['title'][:45]
         
         window_info_label.config(
-            text=f"✓  [{browser}] {title}... (HWND: {selected_hwnd})",
+            text=f"✓  {title}... (HWND: {selected_hwnd})",
             foreground=COLORS['success']
         )
         
-        log_text.insert(tk.END, f"\n🎯 Đã chọn cửa sổ chính: [{browser}] {title}...\n")
+        log_text.insert(tk.END, f"\n🎯 Đã chọn cửa sổ chính: {title}...\n")
         log_text.insert(tk.END, f"   HWND: {selected_hwnd}\n\n")
         log_text.see(tk.END)
         
@@ -349,9 +256,9 @@ def start_sync():
         messagebox.showerror("Lỗi", "Không tìm thấy file 'brower.py'!")
         return
     
-    windows, browser_types = get_all_browser_windows()
+    windows = get_chrome_windows()
     if not windows:
-        messagebox.showwarning("Cảnh báo", "Không tìm thấy cửa sổ browser nào!")
+        messagebox.showwarning("Cảnh báo", "Không tìm thấy cửa sổ Chrome!")
         return
     
     try:
@@ -428,7 +335,7 @@ def on_close():
 
 # === GIAO DIỆN CHÍNH ===
 root = tk.Tk()
-root.title("Multi-Browser Sync Controller")
+root.title("Chrome Sync Controller")
 root.geometry("900x700")
 root.configure(bg=COLORS['light'])
 
@@ -454,7 +361,7 @@ tk.Label(
 
 tk.Label(
     header,
-    text="Multi-Browser Sync Controller",
+    text="Chrome Sync Controller",
     font=("Segoe UI", 22, "bold"),
     bg=COLORS['primary'],
     fg="white"
@@ -462,7 +369,7 @@ tk.Label(
 
 tk.Label(
     header,
-    text="Đồng bộ nhiều cửa sổ Browser (Chrome, Edge, Firefox, Opera, Brave...) - Chính xác 100%",
+    text="Đồng bộ nhiều cửa sổ Chrome - Chuột, Bàn phím, Text - Chính xác 100%",
     font=("Segoe UI", 10),
     bg=COLORS['primary'],
     fg="white"
@@ -481,7 +388,7 @@ card_header.pack(fill=tk.X, padx=20, pady=(15, 10))
 
 tk.Label(
     card_header,
-    text="🎯 Cửa sổ điều khiển (Hỗ trợ tất cả browsers)",
+    text="🎯 Cửa sổ điều khiển Chrome",
     font=("Segoe UI", 12, "bold"),
     bg=COLORS['card_bg'],
     fg=COLORS['text']
@@ -607,10 +514,10 @@ log_text.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
 
 # Log ban đầu
 log_text.insert(tk.END, "╔" + "═" * 78 + "╗\n")
-log_text.insert(tk.END, "║" + " " * 15 + "Multi-Browser Sync Tool - Sẵn sàng" + " " * 28 + "║\n")
+log_text.insert(tk.END, "║" + " " * 20 + "Chrome Sync Tool - Sẵn sàng" + " " * 30 + "║\n")
 log_text.insert(tk.END, "╚" + "═" * 78 + "╝\n\n")
 log_text.insert(tk.END, "📌 HƯỚNG DẪN:\n\n")
-log_text.insert(tk.END, "  1️⃣  Mở nhiều cửa sổ Browser (Chrome, Edge, Firefox, Opera, Brave...)\n")
+log_text.insert(tk.END, "  1️⃣  Mở nhiều cửa sổ Chrome (Ctrl+N)\n")
 log_text.insert(tk.END, "  2️⃣  Nhấn 'Chọn cửa sổ' để chọn cửa sổ điều khiển\n")
 log_text.insert(tk.END, "  3️⃣  Nhấn 'Bắt đầu đồng bộ'\n")
 log_text.insert(tk.END, "  4️⃣  Click/Scroll/Drag trong cửa sổ chính → Tất cả đồng bộ\n")
@@ -619,7 +526,6 @@ log_text.insert(tk.END, "  6️⃣  Nhấn ESC để dừng\n\n")
 log_text.insert(tk.END, "⚡ Đồng bộ với TỶ LỆ PHẦN TRĂM - Chính xác 100%!\n")
 log_text.insert(tk.END, "🖱️  Đồng bộ CHUỘT: Click, Scroll, Drag & Drop\n")
 log_text.insert(tk.END, "⌨️  Đồng bộ BÀN PHÍM: Text input, phím tắt, special keys\n")
-log_text.insert(tk.END, "🌐 Hỗ trợ: Chrome, Edge, Firefox, Opera, Brave, Vivaldi, Yandex, CocCoc...\n")
 log_text.insert(tk.END, "━" * 80 + "\n\n")
 log_text.insert(tk.END, "⏳ Chờ bắt đầu...\n")
 
@@ -630,7 +536,7 @@ footer.pack_propagate(False)
 
 tk.Label(
     footer,
-    text="💡 Hỗ trợ tất cả browsers - Đồng bộ bằng tỷ lệ % - Hoạt động với mọi kích thước cửa sổ",
+    text="💡 Chrome Sync - Đồng bộ Chuột, Bàn phím, Text bằng tỷ lệ % - Hoạt động với mọi kích thước",
     font=("Segoe UI", 9),
     bg=COLORS['dark'],
     fg="white"
