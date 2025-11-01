@@ -13,7 +13,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 # === CẤU HÌNH ===
 SCROLL_SPEED = 1.0
 WINDOW_SCAN_INTERVAL = 0.5
-ENABLE_KEYBOARD_SYNC = False
+ENABLE_KEYBOARD_SYNC = True  # Bật đồng bộ bàn phím
 
 SELECTED_MAIN_HWND = None
 if len(sys.argv) > 1:
@@ -193,6 +193,8 @@ print("🚀 HỆ THỐNG ĐỒNG BỘ TỶ LỆ PHẦN TRĂM - HỖ TRỢ TẤT 
 print("  ✓ Tự động scale theo kích thước cửa sổ")
 print("  ✓ Đồng bộ chính xác 100% dù khác size")
 print("  ✓ Click/Scroll/Drag/Drop đều được xử lý")
+print("  ✓ Đồng bộ BÀN PHÍM (text input, phím tắt)")
+print("  ✓ Đồng bộ DI CHUYỂN CHUỘT (drag & drop)")
 print("  ✓ Phát hiện cửa sổ mới tự động")
 print("  ✓ Hỗ trợ: Chrome, Edge, Firefox, Opera, Brave, Vivaldi, Yandex, CocCoc...")
 print("  ✓ Nhấn ESC để thoát")
@@ -377,6 +379,17 @@ def sync_scroll(x, y, dx, dy):
                 # print(f"[DEBUG] Lỗi scroll hwnd {hwnd}: {e}")
                 pass
 
+def get_main_window_focus():
+    """Kiểm tra cửa sổ chính có đang active/focus không"""
+    try:
+        with windows_lock:
+            if not main_hwnd:
+                return False
+            active_hwnd = win32gui.GetForegroundWindow()
+            return active_hwnd == main_hwnd or win32gui.GetParent(active_hwnd) == main_hwnd
+    except:
+        return False
+
 def is_in_main_window(x, y):
     """Kiểm tra tọa độ có trong cửa sổ chính"""
     try:
@@ -388,16 +401,224 @@ def is_in_main_window(x, y):
     except:
         return False
 
+# Mapping từ pynput Key sang VK code
+KEY_VK_MAP = {
+    keyboard.Key.space: win32con.VK_SPACE,
+    keyboard.Key.enter: win32con.VK_RETURN,
+    keyboard.Key.backspace: win32con.VK_BACK,
+    keyboard.Key.delete: win32con.VK_DELETE,
+    keyboard.Key.tab: win32con.VK_TAB,
+    keyboard.Key.esc: win32con.VK_ESCAPE,
+    keyboard.Key.shift: win32con.VK_SHIFT,
+    keyboard.Key.ctrl: win32con.VK_CONTROL,
+    keyboard.Key.alt: win32con.VK_MENU,
+    keyboard.Key.up: win32con.VK_UP,
+    keyboard.Key.down: win32con.VK_DOWN,
+    keyboard.Key.left: win32con.VK_LEFT,
+    keyboard.Key.right: win32con.VK_RIGHT,
+    keyboard.Key.home: win32con.VK_HOME,
+    keyboard.Key.end: win32con.VK_END,
+    keyboard.Key.page_up: win32con.VK_PRIOR,
+    keyboard.Key.page_down: win32con.VK_NEXT,
+    keyboard.Key.f1: win32con.VK_F1,
+    keyboard.Key.f2: win32con.VK_F2,
+    keyboard.Key.f3: win32con.VK_F3,
+    keyboard.Key.f4: win32con.VK_F4,
+    keyboard.Key.f5: win32con.VK_F5,
+    keyboard.Key.f6: win32con.VK_F6,
+    keyboard.Key.f7: win32con.VK_F7,
+    keyboard.Key.f8: win32con.VK_F8,
+    keyboard.Key.f9: win32con.VK_F9,
+    keyboard.Key.f10: win32con.VK_F10,
+    keyboard.Key.f11: win32con.VK_F11,
+    keyboard.Key.f12: win32con.VK_F12,
+}
+
+def sync_keyboard(key, is_press=True):
+    """Đồng bộ keyboard input đến tất cả cửa sổ phụ"""
+    if not ENABLE_KEYBOARD_SYNC:
+        return
+    
+    with syncing_lock:
+        with windows_lock:
+            if not main_window or not other_hwnds:
+                return
+            
+            # Kiểm tra nếu cửa sổ chính không có focus thì không sync
+            if not get_main_window_focus():
+                return
+            
+            # Chuyển đổi key thành virtual key code
+            try:
+                vk_code = None
+                char_to_send = None
+                
+                # Kiểm tra special keys
+                if key in KEY_VK_MAP:
+                    vk_code = KEY_VK_MAP[key]
+                elif hasattr(key, 'vk') and key.vk:
+                    vk_code = key.vk
+                elif hasattr(key, 'value') and hasattr(key.value, 'vk'):
+                    vk_code = key.value.vk
+                elif hasattr(key, 'char') and key.char:
+                    # Regular character
+                    char = key.char
+                    char_to_send = char
+                    # Chuyển char thành VK code
+                    vk_result = win32api.VkKeyScan(char)
+                    if vk_result != -1:
+                        vk_code = vk_result & 0xFF
+                    else:
+                        return
+                else:
+                    return
+                
+                if vk_code is None:
+                    return
+                
+                # Gửi key đến các cửa sổ phụ
+                scan_code = win32api.MapVirtualKey(vk_code, 0)
+                repeat_count = 1
+                lparam = (repeat_count & 0xFFFF) | (scan_code << 16)
+                
+                if is_press:
+                    msg = win32con.WM_KEYDOWN
+                    char_msg = win32con.WM_CHAR
+                else:
+                    msg = win32con.WM_KEYUP
+                    char_msg = None
+                
+                for hwnd in other_hwnds:
+                    try:
+                        if not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+                            continue
+                        
+                        # Gửi key message
+                        win32gui.PostMessage(hwnd, msg, vk_code, lparam)
+                        
+                        # Nếu là ký tự có thể in, gửi thêm WM_CHAR
+                        if is_press and char_to_send and char_to_send.isprintable():
+                            char_code = ord(char_to_send)
+                            win32gui.PostMessage(hwnd, char_msg, char_code, lparam)
+                    except:
+                        pass
+                        
+            except Exception as e:
+                # print(f"[DEBUG] Lỗi keyboard sync: {e}")
+                pass
+
+def sync_mouse_move(x, y):
+    """Đồng bộ di chuyển chuột (cho drag)"""
+    with syncing_lock:
+        with windows_lock:
+            if not main_window or not other_hwnds:
+                return
+            
+            try:
+                # Lấy thông tin cửa sổ chính
+                main_rect = win32gui.GetWindowRect(main_hwnd)
+                main_left, main_top = main_rect[0], main_rect[1]
+                
+                # Chuyển tọa độ screen -> client
+                try:
+                    main_client_x, main_client_y = win32gui.ScreenToClient(main_hwnd, (x, y))
+                except:
+                    main_client_x = x - main_left
+                    main_client_y = y - main_top
+                
+                # Lấy kích thước client
+                main_client_width, main_client_height = get_client_size(main_hwnd)
+                
+                if not main_client_width or not main_client_height:
+                    return
+                
+                # Tính TỶ LỆ PHẦN TRĂM
+                percent_x = main_client_x / main_client_width
+                percent_y = main_client_y / main_client_height
+                
+                # Kiểm tra hợp lệ
+                if not (0 <= percent_x <= 1 and 0 <= percent_y <= 1):
+                    return
+                
+                # Gửi mouse move đến các cửa sổ phụ
+                for hwnd in other_hwnds:
+                    try:
+                        if not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+                            continue
+                        
+                        # Lấy kích thước client của cửa sổ phụ
+                        target_width, target_height = get_client_size(hwnd)
+                        
+                        if not target_width or not target_height:
+                            continue
+                        
+                        # Tính tọa độ client dựa trên TỶ LỆ
+                        target_client_x = int(percent_x * target_width)
+                        target_client_y = int(percent_y * target_height)
+                        
+                        # Đảm bảo trong phạm vi
+                        target_client_x = max(0, min(target_client_x, target_width - 1))
+                        target_client_y = max(0, min(target_client_y, target_height - 1))
+                        
+                        # Tạo lParam
+                        lparam = win32api.MAKELONG(target_client_x & 0xFFFF, target_client_y & 0xFFFF)
+                        
+                        # Gửi WM_MOUSEMOVE
+                        wparam = 0
+                        # Kiểm tra nút chuột nào đang được nhấn
+                        if win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000:
+                            wparam |= win32con.MK_LBUTTON
+                        if win32api.GetAsyncKeyState(win32con.VK_RBUTTON) & 0x8000:
+                            wparam |= win32con.MK_RBUTTON
+                        if win32api.GetAsyncKeyState(win32con.VK_MBUTTON) & 0x8000:
+                            wparam |= win32con.MK_MBUTTON
+                        
+                        win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, wparam, lparam)
+                        
+                    except:
+                        pass
+            except Exception as e:
+                pass
+
 # === LẮNG NGHE SỰ KIỆN ===
+last_mouse_pos = (0, 0)
+mouse_move_threshold = 5  # Chỉ sync khi di chuyển > 5 pixels
+
 def on_click(x, y, button, pressed):
-    if pressed and is_in_main_window(x, y):
-        sync_click(x, y, button)
+    global last_mouse_pos
+    if is_in_main_window(x, y):
+        if pressed:
+            sync_click(x, y, button)
+        last_mouse_pos = (x, y)
+
+def on_move(x, y):
+    """Xử lý di chuyển chuột (cho drag)"""
+    global last_mouse_pos
+    if is_in_main_window(x, y):
+        # Chỉ sync nếu di chuyển đủ xa (tránh spam)
+        dx = abs(x - last_mouse_pos[0])
+        dy = abs(y - last_mouse_pos[1])
+        if dx > mouse_move_threshold or dy > mouse_move_threshold:
+            sync_mouse_move(x, y)
+            last_mouse_pos = (x, y)
 
 def on_scroll(x, y, dx, dy):
     if is_in_main_window(x, y):
         sync_scroll(x, y, dx, dy)
 
-def on_release(key):
+def on_key_press(key):
+    """Xử lý nhấn phím"""
+    try:
+        # Bỏ qua ESC (để dừng chương trình)
+        if key == keyboard.Key.esc:
+            return True
+        sync_keyboard(key, is_press=True)
+    except:
+        pass
+    return True
+
+def on_key_release(key):
+    """Xử lý thả phím"""
     if key == keyboard.Key.esc:
         print("\n" + "=" * 70)
         print("[STOP] Đã nhấn ESC - Đang thoát...")
@@ -408,15 +629,30 @@ def on_release(key):
         if key_listener:
             key_listener.stop()
         return False
+    
+    if ENABLE_KEYBOARD_SYNC:
+        try:
+            sync_keyboard(key, is_press=False)
+        except:
+            pass
+    
+    return True
 
 # === CHẠY CHƯƠNG TRÌNH ===
 try:
     # Khởi động thread giám sát
     threading.Thread(target=monitor_windows, daemon=True).start()
     
-    # Khởi động listener
-    mouse_listener = mouse.Listener(on_click=on_click, on_scroll=on_scroll)
-    key_listener = keyboard.Listener(on_release=on_release)
+    # Khởi động listener với đầy đủ events
+    mouse_listener = mouse.Listener(
+        on_click=on_click, 
+        on_scroll=on_scroll,
+        on_move=on_move
+    )
+    key_listener = keyboard.Listener(
+        on_press=on_key_press,
+        on_release=on_key_release
+    )
     
     mouse_listener.start()
     key_listener.start()
